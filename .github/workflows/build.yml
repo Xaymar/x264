@@ -1,0 +1,152 @@
+# Targetting Zen1 minimum:
+#  BMI, BMI2, F16C, FMA, FSGSBASE, AVX, AVX2, ADCX, RDSEED, MWAITX, SHA, CLZERO,
+#  AES, PCLMUL, CX16, MOVBE, MMX, SSE, SSE2, SSE3, SSE4A, SSSE3, SSE4.1, SSE4.2,
+#  ABM, XSAVEC, XSAVES, CLFLUSHOPT, POPCNT
+
+name: Build
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, Tag or Commit to build'
+        required: true
+        default: 'master'
+
+jobs:
+  compile:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        bits: [ 32, 64 ]
+        type: [ "static", "shared" ]
+        license: [ "GPLv2" ]
+        include:
+          - bits: 32
+            license: "GPLv2"
+            prefix: "i686-w64-mingw32-"
+            configure: "--host=mingw32-win32"
+          - bits: 64
+            license: "GPLv2"
+            prefix: "x86_64-w64-mingw32-"
+            configure: "--host=mingw64-win32"
+    name: "Windows (${{ matrix.bits }}bit, ${{ matrix.license }}, ${{ matrix.type }})"
+    outputs:
+      major: ${{ steps.data.outputs.major }}
+      minor: ${{ steps.data.outputs.minor }}
+      commit: ${{ steps.data.outputs.commit }}
+    steps:
+    - name: "Checkout"
+      uses: actions/checkout@v2
+      with:
+        ref: "${{ github.event.inputs.ref }}"
+        submodules: "recursive"
+        fetch-depth: 0
+    - name: "Dependencies: Packages"
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install \
+          build-essential git \
+          cmake make ninja-build \
+          pkg-config \
+          mingw-w64 mingw-w64-tools gcc-mingw-w64 g++-mingw-w64 \
+          nasm
+    - name: "Configure Build"
+      shell: bash
+      run: |
+        ./configure \
+          --cross-prefix=${{ matrix.prefix }} ${{ matrix.configure }} \
+          --prefix=./distrib \
+          --extra-cflags=-O3 --extra-cflags=-mmmx --extra-cflags=-msse --extra-cflags=-msse2 --extra-cflags=-msse3 --extra-cflags=-mssse3 \
+          --extra-cflags=-msse4.1 --extra-cflags=-msse4.2 --extra-cflags=-mavx --extra-cflags=-maes --extra-cflags=-mpclmul \
+          --enable-${{ matrix.type }} \
+          --enable-strip \
+          --enable-lto --enable-pic \
+          --bit-depth=all --chroma-format=all \
+          --disable-bashcompletion --disable-avs --disable-swscale --disable-lavf --disable-ffms --disable-gpac --disable-lsmash
+    - name: "Gather Information"
+      id: data
+      shell: bash
+      run: |
+        api="$(grep '#define X264_BUILD' < x264.h | sed 's/^.* \([1-9][0-9]*\).*$/\1/')"
+        echo "::set-output name=major::${api}"
+        echo "::set-output name=minor::${revision}"
+        echo "::set-output name=commit::$(git rev-parse ${{ github.event.inputs.ref }})"
+    - name: "Compile"
+      shell: bash 
+      run: |
+        make -j $(($(grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}') * 2))
+        make install
+    - name: "Generate Library File"
+      if: "matrix.type == 'shared'"
+      shell: bash
+      run: |
+        cd ./distrib/bin
+        gendef - libx264-${{ steps.data.outputs.major }}.dll > ../lib/libx264-${{ steps.data.outputs.major }}.def
+        cd ../lib
+        ${{ matrix.prefix }}dlltool \
+          -d libx264-${{ steps.data.outputs.major }}.def \
+          -l libx264-${{ steps.data.outputs.major }}.lib
+    - name: "Upload Artifact"
+      uses: actions/upload-artifact@v1
+      with:
+        name: x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}
+        path: distrib
+  release:
+    name: "Create Release"
+    if: startsWith(github.event.inputs.ref, 'refs/tags/')
+    needs: compile
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: "Checkout"
+      uses: actions/checkout@v2
+      with:
+        ref: "${{ github.event.inputs.ref }}"
+        submodules: "recursive"
+        fetch-depth: 0
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.event.inputs.ref }}
+        release_name: ${{ github.event.inputs.ref }}
+        body: |
+          Automatically generated release, please look at the commit history instead.
+        draft: false
+        prerelease: true
+        commitish: ${{ needs.compile.outputs.commit }}
+  upload:
+    name: "Upload Release"
+    if: startsWith(github.event.inputs.ref, 'refs/tags/')
+    needs: release
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        bits: [ 32, 64 ]
+        type: [ "static", "shared" ]
+        license: [ "GPLv2" ]
+    steps:
+    - name: "Download Artifact"
+      uses: actions/download-artifact@v1
+      with:
+        name: x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}
+        path: .
+    - name: "Compress Binaries"
+      shell: bash
+      run: |
+        7z a -mmt1 -mm=Deflate -mfb=258 -mpass=15 -r -ssw  ../x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}.zip ./
+    - name: "Upload Release"
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}.zip
+        asset_name: x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}.zip
+        asset_content_type: application/zip
