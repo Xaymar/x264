@@ -140,7 +140,7 @@ jobs:
     - name: "Compress Binaries"
       shell: bash
       run: |
-        7z a -mmt1 -mm=Deflate -mfb=258 -mpass=15 -r -ssw  ../x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}.zip ./
+        7z a -mmt1 -mm=Deflate -mfb=258 -mpass=15 -r -ssw  x264-${{ matrix.bits }}-${{ matrix.type }}-${{ matrix.license }}.zip ./
     - name: "Upload Release"
       uses: actions/upload-release-asset@v1
       env:
