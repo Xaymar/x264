@@ -1,0 +1,50 @@
+name: Refresh 
+on:
+  schedule:
+    # Run every hour.
+    - cron: '0 0 * * *'
+  push:
+    branches:
+      - 'automation'
+      - 'automation-test'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    name: "Update Mirror"
+    steps:
+    - name: "Checkout"
+      uses: actions/checkout@v2
+    - name: "Configure"
+      shell: bash
+      run: |
+        git config --global user.name 'GitHub Actions'
+        git config --global user.email 'xaymar@users.noreply.github.com'
+        git config pull.ff only 
+        git config pull.rebase true      
+    - name: "Remotes"
+      shell: bash
+      run: |
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+        git remote add -f --tags remote https://code.videolan.org/videolan/x264.git
+        git fetch --all
+    - name: "Update and Trigger Builds"
+      shell: bash
+      run: |
+        declare -a BRANCHES
+        BRANCHES[${#BRANCHES[@]}]="master"
+        BRANCHES[${#BRANCHES[@]}]="stable"
+
+        for d in ${BRANCHES[@]}; do
+          git diff -s --exit-code origin/${d} remote/${d}
+          if [ $? -ne 0 ]; then
+            git checkout -b ${d} origin/${d}
+            git push --set-upstream origin ${d}
+            curl \
+              -X POST \
+              -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"ref\":\"automation\",\"inputs\":{\"ref\":\"${d}\"}}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches"
+          fi
+        done
