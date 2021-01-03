@@ -37,9 +37,9 @@ jobs:
         for d in ${BRANCHES[@]}; do
           if ! git diff -s --exit-code origin/${d} remote/${d}; then
             echo "Branch '${d}' requires update."
-            git checkout -b ${d} origin/${d}
+            git checkout -b ${d} remote/${d}
             git push --set-upstream origin ${d}
-            curl \
+            curl -s --show-error \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
