@@ -36,14 +36,34 @@ jobs:
 
         for d in ${BRANCHES[@]}; do
           if ! git diff -s --exit-code origin/${d} remote/${d}; then
+            # Update Branch
             echo "Branch '${d}' requires update."
             git checkout -b ${d} remote/${d}
             git push --set-upstream origin ${d}
+            
+            # Set build reference
+            ref="${d}"
+
+            # If this is the main branch, push a new tag as well.
+            if [ "${d}" == "${BRANCHES[0]}" ]; then
+              # Grab version info from x264 and git.
+              api="$(grep '#define X264_BUILD' < x264.h | sed 's/^.* \([1-9][0-9]*\).*$/\1/')"
+              localver="$(($(git rev-list HEAD | wc -l)))"
+
+              # Create tag and update build reference
+              tag="0.${api}.${localver}"
+              ref="refs/tags/${tag}"
+              if git tag -a ${tag}; then
+                git push origin ${tag}
+              fi
+            fi
+
+            # Spawn a new build
             curl -s --show-error \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"${d}\"}}" \
+              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"${ref}\"}}" \
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches"
           else
             echo "Branch '${d}' is up to date."
