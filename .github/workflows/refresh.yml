@@ -34,38 +34,47 @@ jobs:
         BRANCHES[${#BRANCHES[@]}]="master"
         BRANCHES[${#BRANCHES[@]}]="stable"
 
+        # Iterate over every available branch.
+        echo "Testing branches for differences..."
         for d in ${BRANCHES[@]}; do
-          if ! git diff -s --exit-code origin/${d} remote/${d}; then
-            # Update Branch
-            echo "Branch '${d}' requires update."
-            git checkout -b ${d} remote/${d}
+          BRANCH_REQUIRES_UPDATE=false
+          if ! git branch -a | grep origin/${d} > /dev/null; then
+            echo "  '${d}' is missing, creating..."
+            git checkout -b ${d} remote/${d} > /dev/null
+            BRANCH_REQUIRES_UPDATE=true
+          elif ! git diff -s --exit-code origin/${d} remote/${d} > /dev/null; then
+            echo "  '${d}' is out of date, updating..."
+            git checkout -b ${d} origin/${d} > /dev/null
+            BRANCH_REQUIRES_UPDATE=true
+          fi
+
+          # Grab the X264 version for later use.
+          x264_api="$(grep '#define X264_BUILD' < x264.h | sed 's/^.* \([1-9][0-9]*\).*$/\1/')"
+          x264_patch="$(($(git rev-list HEAD | wc -l)))"
+          tag="0.${x264_api}.${x264_patch}"
+
+          # Trigger Builds for any branch that requires an update.
+          if ${BRANCH_REQUIRES_UPDATE}; then
             git push --set-upstream origin ${d}
-
-            # Set build reference
-            ref="${d}"
-
-            # If this is the main branch, push a new tag as well.
-            if [ "${d}" == "${BRANCHES[0]}" ]; then
-              # Grab version info from x264 and git.
-              api="$(grep '#define X264_BUILD' < x264.h | sed 's/^.* \([1-9][0-9]*\).*$/\1/')"
-              localver="$(($(git rev-list HEAD | wc -l)))"
-
-              # Create tag and update build reference
-              tag="0.${api}.${localver}"
-              ref="refs/tags/${tag}"
-              if git tag -a ${tag}; then
-                git push origin ${tag}
-              fi
-            fi
-
-            # Spawn a new build
-            curl -s --show-error \
+            curl -s \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"${ref}\"}}" \
+              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"${d}\"}}" \
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches"
-          else
-            echo "Branch '${d}' is up to date."
+          fi
+
+          # Check if the current commit has the appropriate tag.
+          cur_tag="$(git tag --points-at HEAD)"
+          if [[ "${cur_tag}" != "${tag}" ]]; then
+            # If not, create the tag and fire off a build.
+            git tag "${tag}"
+            git push --set-upstream origin "tags/${tag}""
+            curl -s \
+              -X POST \
+              -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"tags/${tag}\"}}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches"
           fi
         done
