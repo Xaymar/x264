@@ -57,7 +57,7 @@ jobs:
           # Trigger Builds for any branch that requires an update.
           if ${BRANCH_REQUIRES_UPDATE}; then
             git push --force --set-upstream origin ${d}
-            curl -s \
+            curl -s --show-error \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
@@ -69,9 +69,10 @@ jobs:
           cur_tag="$(git tag --points-at HEAD)"
           if [[ "${cur_tag}" != "${tag}" ]]; then
             # If not, create the tag and fire off a build.
+            echo "  '${d}' has tag '${cur_tag}', but should have tag '${tag}', updating..."
             git tag "${tag}"
             git push --force --set-upstream origin "tags/${tag}"
-            curl -s \
+            curl -s --show-error \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
