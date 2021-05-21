@@ -1,7 +1,7 @@
-name: Refresh 
+name: Refresh
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * 0'
   push:
     branches:
       - 'automation'
@@ -19,8 +19,8 @@ jobs:
       run: |
         git config --global user.name 'GitHub Actions'
         git config --global user.email 'xaymar@users.noreply.github.com'
-        git config pull.ff only 
-        git config pull.rebase true      
+        git config pull.ff only
+        git config pull.rebase true
     - name: "Remotes"
       shell: bash
       run: |
@@ -40,7 +40,7 @@ jobs:
             echo "Branch '${d}' requires update."
             git checkout -b ${d} remote/${d}
             git push --set-upstream origin ${d}
-            
+
             # Set build reference
             ref="${d}"
 
