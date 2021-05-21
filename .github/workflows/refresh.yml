@@ -40,13 +40,14 @@ jobs:
           BRANCH_REQUIRES_UPDATE=false
           if ! git branch -a | grep origin/${d} > /dev/null; then
             echo "  '${d}' is missing, creating..."
-            git checkout -b ${d} remote/${d} > /dev/null
             BRANCH_REQUIRES_UPDATE=true
           elif ! git diff -s --exit-code origin/${d} remote/${d} > /dev/null; then
             echo "  '${d}' is out of date, updating..."
-            git checkout -b ${d} origin/${d} > /dev/null
             BRANCH_REQUIRES_UPDATE=true
           fi
+
+          # Always check out the remote branch.
+          git checkout -b "${d}" "remote/${d}" > /dev/null
 
           # Grab the X264 version for later use.
           x264_api="$(grep '#define X264_BUILD' < x264.h | sed 's/^.* \([1-9][0-9]*\).*$/\1/')"
@@ -55,7 +56,7 @@ jobs:
 
           # Trigger Builds for any branch that requires an update.
           if ${BRANCH_REQUIRES_UPDATE}; then
-            git push --set-upstream origin ${d}
+            git push --force --set-upstream origin ${d}
             curl -s \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
@@ -69,7 +70,7 @@ jobs:
           if [[ "${cur_tag}" != "${tag}" ]]; then
             # If not, create the tag and fire off a build.
             git tag "${tag}"
-            git push --set-upstream origin "tags/${tag}""
+            git push --force --set-upstream origin "tags/${tag}"
             curl -s \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
