@@ -71,12 +71,12 @@ jobs:
             # If not, create the tag and fire off a build.
             echo "  '${d}' has tag '${cur_tag}', but should have tag '${tag}', updating..."
             git tag "${tag}"
-            git push --force --set-upstream origin "tags/${tag}"
+            git push --force --set-upstream origin "${tag}"
             curl -s --show-error \
               -X POST \
               -H "Authorization: token ${{ secrets.WORKFLOW_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"tags/${tag}\"}}" \
+              -d "{\"ref\":\"${{ github.ref }}\",\"inputs\":{\"ref\":\"${tag}\"}}" \
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches"
           fi
         done

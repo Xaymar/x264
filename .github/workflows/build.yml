@@ -73,7 +73,7 @@ jobs:
         echo "::set-output name=minor::${revision}"
         echo "::set-output name=commit::$(git rev-parse ${{ github.event.inputs.ref }})"
     - name: "Compile"
-      shell: bash 
+      shell: bash
       run: |
         make -j $(($(grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}') * 2))
         make install
